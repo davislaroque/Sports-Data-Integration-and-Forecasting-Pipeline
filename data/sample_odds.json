@@ -1,38 +1,61 @@
-{
-  "sport_key": "basketball_nba",
-  "sport_title": "NBA",
-  "commence_time": "2025-01-01T00:00:00Z",
-  "home_team": "Lakers",
-  "away_team": "Heat",
-  "bookmakers": [
-    {
-      "title": "BookA",
-      "last_update": "2025-01-01T00:00:00Z",
-      "markets": [
-        {
-          "key": "h2h",
-          "outcomes": [
-            {"name": "Lakers", "price": 1.95},
-            {"name": "Heat", "price": 2.20}
-          ]
-        }
-      ]
-    },
-    {
-      "title": "BookB",
-      "last_update": "2025-01-01T00:00:00Z",
-      "markets": [
-        {
-          "key": "h2h",
-          "outcomes": [
-            {"name": "Lakers", "price": 1.85},
-            {"name": "Heat", "price": 2.00}
-          ]
-        }
-      ]
-    }
-  ]
-}
-
+[
+  {
+    "id": "game_001",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2025-01-01T00:00:00Z",
+    "home_team": "Los Angeles Lakers",
+    "away_team": "Miami Heat",
+    "bookmakers": [
+      {
+        "title": "BookA",
+        "last_update": "2025-01-01T00:00:00Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Los Angeles Lakers", "price": 1.95},
+              {"name": "Miami Heat", "price": 2.2}
+            ]
+          }
+        ]
+      },
+      {
+        "title": "BookB",
+        "last_update": "2025-01-01T00:00:00Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Los Angeles Lakers", "price": 1.85},
+              {"name": "Miami Heat", "price": 2.0}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "game_002",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2025-01-02T01:00:00Z",
+    "home_team": "Denver Nuggets",
+    "away_team": "Phoenix Suns",
+    "bookmakers": [
+      {
+        "title": "BookA",
+        "last_update": "2025-01-02T00:00:00Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Denver Nuggets", "price": 1.7},
+              {"name": "Phoenix Suns", "price": 2.1}
+            ]
+          }
+        ]
+      }
+    ]
   }
 ]

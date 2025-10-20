@@ -1,33 +1,48 @@
-🏀 NBA Odds Data Pipeline & Analysis
+# Technical Notes & Deep Dive
 
-This project builds a data pipeline and analytics framework for NBA betting markets, designed to transform raw sportsbook data into structured insights. Using The Odds API, it ingests live odds (head-to-head matchups, player props, and other markets), processes the data into clean, comparable formats, and runs analyses to uncover differences across sportsbooks.
+This document supplements the project overview by focusing on implementation details, engineering trade-offs, and future enhancements.
 
-The core goals are:
+## Data Model
+The canonical odds table produced by `src.ingestion.props_to_dataframe` contains the following schema:
 
-▫️Data Ingestion: Automating the collection of NBA odds data across multiple bookmakers.
+| Column | Description |
+| --- | --- |
+| `timestamp` | UTC timestamp when the ingestion ran. |
+| `game_id` | Stable identifier from The Odds API. |
+| `commence_time` | Scheduled start time of the matchup. |
+| `home_team` / `away_team` | Participating teams. |
+| `bookmaker` | Sportsbook name. |
+| `last_update` | Provider timestamp for this bookmaker-market pair. |
+| `player_name` | Player associated with the prop (if applicable). |
+| `market` | Market key (e.g., `h2h`, `player_points`). |
+| `line` | Line/handicap for the outcome. |
+| `price` | Decimal odds. |
 
-▫️Data Engineering: Parsing and flattening complex JSON responses into structured datasets ready for analysis.
+## Module Responsibilities
+- **`src/ingestion.py`** – encapsulates API I/O. Functions are pure where possible, accept parameters for sport/market configuration, and persist snapshots to disk. `_require_api_key` centralizes secrets handling.
+- **`src/processing.py`** – provides deterministic helpers for flattening JSON into tidy DataFrames and for normalizing prices (American ↔ decimal) before devigging probabilities. `clean_odds` chains the helpers for end-to-end cleaning.
+- **`src/analysis.py`** – offers composable utilities (`parse_market`, `find_best_odds`, `detect_arbitrage`, `detect_discrepancies`) used in notebooks and the Streamlit dashboard.
+- **`src/features.py` / `src/modeling.py`** – starter feature generation and regression models; both accept pandas objects to stay notebook-friendly.
+- **`web/app.py`** – Streamlit application that loads live data when credentials are available or defaults to the curated fixture. Visuals highlight the best available price per outcome and arbitrage margin when detected.
 
-▫️Market Analysis: Identifying line discrepancies and opportunities, such as where one sportsbook offers significantly better odds than another.
+## Testing Strategy
+Pytest cases live in `tests/` and cover:
+- JSON flattening and structural integrity of the ingestion layer.
+- Conversion heuristics for decimal and American odds.
+- The probability math that ensures devigged probabilities sum to one per market.
+- Arbitrage detection logic based on the curated sample odds.
 
-▫️Future Expansion: Laying the foundation for predictive modeling of player performance and expected line values.
+Run the suite with `pytest`; CI integration can be added with GitHub Actions using the same command.
 
-🎯 Real-World Applications
+## Reproducible Analytics
+- All notebooks should be checked in with outputs or committed as executed `.ran` artifacts.
+- Sample data in `data/sample_odds.json` mirrors the format returned by The Odds API, enabling deterministic demos and unit tests.
+- When running live ingestion, snapshots are timestamped and appended to a canonical CSV, making it simple to replay or backtest historical odds.
 
-▫️For Bettors & Analysts: Quickly compare odds across DraftKings, FanDuel, and others to “shop” for the best line or detect arbitrage opportunities.
+## Future Enhancements
+1. **Data Quality** – add validation rules that flag stale bookmaker updates or missing outcomes.
+2. **Modeling Depth** – expand feature generation to include opponent defensive stats and rest days; integrate gradient boosting models.
+3. **Alerting** – build a lightweight scheduler that publishes Slack/webhook notifications when arbitrage margins exceed a configurable threshold.
+4. **Deployment** – package ingestion/processing as a CLI (`python -m src.cli ingest`) and containerize the Streamlit UI for one-click deployment.
 
-▫️For Sportsbooks: Benchmark pricing against competitors, spot inefficiencies in real time, and strengthen risk management.
-
-▫️For Data Science: Build predictive models of player props (points, rebounds, assists) and simulate game outcomes against market lines.
-
-💡 Why It Matters
-
-Sports betting markets move fast and are highly competitive. By developing this system, I’ve shown the ability to:
-
-  -Engineer robust pipelines that handle external APIs and messy, real-world data.
-
-  -Apply statistical and analytical reasoning to complex market structures.
-
-  -Translate raw data into actionable insights, the same way sportsbooks must constantly monitor competitors and adjust pricing.
-
-In short, this project demonstrates end-to-end skills in data engineering, sports analytics, and applied problem solving — the very skills that power real-world sportsbook operations at companies like DraftKings.
+Keeping these notes alongside the high-level README ensures recruiters can quickly grasp both the story *and* the engineering rigor behind the project.

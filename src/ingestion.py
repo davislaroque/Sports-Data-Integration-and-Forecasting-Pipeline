@@ -1,72 +1,74 @@
-# src/ingestion.py
-import os
-import requests
-import pandas as pd
+"""Functions for fetching and persisting odds data from The Odds API."""
+
 from datetime import datetime
+import os
+from typing import Iterable, Mapping
+
+import pandas as pd
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-API_KEY = os.getenv("ODDS_API_KEY")
 
 BASE_URL = "https://api.the-odds-api.com/v4/sports"
+DEFAULT_SPORT = "basketball_nba"
+DEFAULT_MARKET = "player_points"
+DEFAULT_REGION = "us"
+DEFAULT_FORMAT = "decimal"
 
-# +
-def fetch_player_props(sport="basketball_nba", markets="player_points", regions="us", odds_format="decimal"):
+
+def _require_api_key() -> str:
+    """Return the Odds API key or raise a helpful error message."""
+
+    api_key = os.getenv("ODDS_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "ODDS_API_KEY is not set. Create a .env file with 'ODDS_API_KEY=your_key' or export the variable "
+            "before calling fetch_player_props."
+        )
+    return api_key
+
+
+def fetch_player_props(
+    sport: str = DEFAULT_SPORT,
+    markets: str = DEFAULT_MARKET,
+    regions: str = DEFAULT_REGION,
+    odds_format: str = DEFAULT_FORMAT,
+) -> Iterable[Mapping[str, object]]:
     """
-    Fetch NBA player prop odds from The Odds API.
-    Returns raw JSON from the API.
+    Fetch raw odds JSON from The Odds API.
+
+    Parameters mirror the API; see https://the-odds-api.com/ for documentation. An
+    ``ODDS_API_KEY`` must be provided either via environment variable or a ``.env`` file.
     """
+
     url = f"{BASE_URL}/{sport}/odds"
-    
     params = {
-        "apiKey": API_KEY,
+        "apiKey": _require_api_key(),
         "markets": markets,
         "regions": regions,
-        "oddsFormat": odds_format
+        "oddsFormat": odds_format,
     }
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
+    response = requests.get(url, params=params, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
-def fetch_odds(sport="basketball_nba", markets="player_points", regions="us", odds_format="decimal"):
-    """
-    Fetch NBA player prop odds and return as a pandas DataFrame.
-    Calls fetch_player_props() and flattens the JSON response.
-    """
-    data = fetch_player_props(sport, markets, regions, odds_format)
+def fetch_odds(
+    sport: str = DEFAULT_SPORT,
+    markets: str = DEFAULT_MARKET,
+    regions: str = DEFAULT_REGION,
+    odds_format: str = DEFAULT_FORMAT,
+) -> pd.DataFrame:
+    """Fetch player props and flatten them into a DataFrame for quick analysis."""
 
-    records = []
-    for game in data:
-        game_info = {
-            "game_id": game.get("id"),
-            "commence_time": game.get("commence_time"),
-            "home_team": game.get("home_team"),
-            "away_team": game.get("away_team")
-        }
-
-        for bookmaker in game.get("bookmakers", []):
-            bookie = bookmaker["title"]
-            for market in bookmaker.get("markets", []):
-                market_key = market.get("key")
-                for outcome in market.get("outcomes", []):
-                    record = {
-                        **game_info,
-                        "bookmaker": bookie,
-                        "market": market_key,
-                        "player": outcome.get("description"),
-                        "price": outcome.get("price"),
-                        "point": outcome.get("point")
-                    }
-                    records.append(record)
-
-    return pd.DataFrame(records)
+    return props_to_dataframe(
+        fetch_player_props(sport=sport, markets=markets, regions=regions, odds_format=odds_format),
+        markets=markets,
+    )
 
 
-
-# -
-
-def props_to_dataframe(props_json, markets="player_points"):
+def props_to_dataframe(props_json, markets: str = DEFAULT_MARKET) -> pd.DataFrame:
     """
     Convert Odds API JSON to a flat pandas DataFrame with canonical fields.
     """
@@ -100,7 +102,21 @@ def props_to_dataframe(props_json, markets="player_points"):
                         "line": outcome.get("point"),
                         "price": outcome.get("price")
                     })
-    return pd.DataFrame(records)
+    columns = [
+        "timestamp",
+        "game_id",
+        "commence_time",
+        "home_team",
+        "away_team",
+        "bookmaker",
+        "last_update",
+        "player_name",
+        "market",
+        "line",
+        "price",
+    ]
+    df = pd.DataFrame(records, columns=columns)
+    return df
 
 def save_snapshot(df, markets="player_points"):
     """
