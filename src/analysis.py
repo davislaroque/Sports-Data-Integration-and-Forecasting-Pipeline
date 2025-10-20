@@ -1,11 +1,10 @@
 # src/analysis.py
 
-"""
-Analysis utilities for sportsbook odds data.
-Includes functions to parse markets, find best odds, and detect arbitrage.
-"""
+"""Utilities for inspecting sportsbook odds data."""
 
 from typing import Dict, Any
+
+import pandas as pd
 
 def parse_market(game: Dict[str, Any], market_key: str) -> Dict[str, Dict[str, Any]]:
     """
@@ -67,11 +66,8 @@ def detect_discrepancies(df: pd.DataFrame, market_key: str = "h2h") -> pd.DataFr
         away = game_df["away_team"].iloc[0]
 
         # get best odds per outcome
-        best_odds = (
-            game_df.groupby("outcome")
-            .apply(lambda x: x.loc[x["price"].idxmax()])
-            .reset_index(drop=True)
-        )
+        best_indices = game_df.groupby("outcome")["price"].idxmax()
+        best_odds = game_df.loc[best_indices].reset_index(drop=True)
 
         # skip if not 2 outcomes
         if len(best_odds) != 2:

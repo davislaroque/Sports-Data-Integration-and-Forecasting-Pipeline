@@ -1,0 +1,716 @@
+diff --git a/README.md b/README.md
+index 880964f..6dda00a 100644
+--- a/README.md
++++ b/README.md
+@@ -1,45 +1,77 @@
+-# Player Prop Pricing + Backtest
+-
+-🏀 NBA Odds Data Pipeline & Analysis
+-
+-This project builds a data pipeline and analytics framework for NBA betting markets, designed to transform raw sportsbook data into structured insights. Using The Odds API, it ingests live odds (head-to-head matchups, player props, and other markets), processes the data into clean, comparable formats, and runs analyses to uncover differences across sportsbooks.
+-
+-The core goals are:
+-
+-▫️Data Ingestion: Automating the collection of NBA odds data across multiple bookmakers.
+-
+-▫️Data Engineering: Parsing and flattening complex JSON responses into structured datasets ready for analysis.
+-
+-▫️Market Analysis: Identifying line discrepancies and opportunities, such as where one sportsbook offers significantly better odds than another.
+-
+-▫️Future Expansion: Laying the foundation for predictive modeling of player performance and expected line values.
+-
+-🎯 Real-World Applications
+-
+-▫️For Bettors & Analysts: Quickly compare odds across DraftKings, FanDuel, and others to “shop” for the best line or detect arbitrage opportunities.
+-
+-▫️For Sportsbooks: Benchmark pricing against competitors, spot inefficiencies in real time, and strengthen risk management.
+-
+-▫️For Data Science: Build predictive models of player props (points, rebounds, assists) and simulate game outcomes against market lines.
+-
+-💡 Why It Matters
+-
+-Sports betting markets move fast and are highly competitive. By developing this system, I’ve shown the ability to:
+-
+--Engineer robust pipelines that handle external APIs and messy, real-world data.
+-
+--Apply statistical and analytical reasoning to complex market structures.
+-
+--Translate raw data into actionable insights, the same way sportsbooks must constantly monitor competitors and adjust pricing.
+-
+-In short, this project demonstrates end-to-end skills in data engineering, sports analytics, and applied problem solving — the very skills that power real-world sportsbook operations.
+-
+-🔑 Quick Start (run the demo)
+-1. Install dependencies:
+-```bash
+-pip install -r requirements.txt
++# NBA Odds Data Pipeline & Analysis
++
++A portfolio-ready, end-to-end pipeline that ingests NBA odds from [The Odds API](https://the-odds-api.com/), cleans and enriches the data for analytics, and surfaces actionable signals such as arbitrage opportunities and line discrepancies.
++
++## 🔍 Project Highlights
++- **Production-minded ingestion** – configurable API client, reproducible snapshots, and canonical history table.
++- **Robust processing layer** – shared helpers for flattening messy sportsbook JSON, handling both decimal and American odds, and devigging probabilities per market.
++- **Exploratory & predictive tools** – feature builders, scikit-learn models, and Streamlit visualizations for comparing model projections to market lines.
++- **Tested, documented, and reproducible** – curated sample fixtures, pytest coverage, `.env` template, and detailed technical docs in `docs/`.
++
++## 🗺️ Architecture Overview
++```mermaid
++graph LR
++    A[The Odds API] -->|fetch_player_props| B(Ingestion)
++    B -->|props_to_dataframe| C[Snapshots / Canonical CSV]
++    C --> D[Processing]
++    D -->|clean_odds, odds_to_probs| E[Analysis]
++    E -->|detect_arbitrage| F[Streamlit App]
++    D -->|features.build_features| G[Modeling]
++    G -->|predict| F
+ ```
+-2. How to run:
+-     notebooks/player_prop_demo.ipynb in Jupyter and Run → Run All Cells,
+-   Or run headlessly:
+-     jupyter nbconvert --ExecutePreprocessor.timeout=600 --to notebook --execute notebooks/player_prop_demo.ipynb --output notebooks/player_prop_demo.ran.ipynb
++
++## 🚀 Getting Started
++1. **Install dependencies**
++   ```bash
++   pip install -r requirements.txt
++   ```
++2. **Configure API credentials**
++   ```bash
++   cp .env.example .env
++   # edit .env and add your The Odds API key
++   ```
++3. **Fetch live data**
++   ```bash
++   python -m src.ingestion
++   ```
++   This writes timestamped CSV snapshots under `data/` and keeps a canonical history file.
++
++4. **Run the Streamlit dashboard**
++   ```bash
++   streamlit run web/app.py
++   ```
++   The app automatically falls back to the curated sample data when no API key is present, so reviewers can explore without credentials.
++
++## 📊 Notebooks & Reproducibility
++- Execute `notebooks/player_prop_demo.ipynb` directly, or run it headlessly:
++  ```bash
++  jupyter nbconvert --ExecutePreprocessor.timeout=600 \
++      --to notebook --execute notebooks/player_prop_demo.ipynb \
++      --output notebooks/player_prop_demo.ran.ipynb
++  ```
++- Commit the rendered `.ran` notebook (or HTML export) to showcase outputs without requiring execution.
++
++## ✅ Quality Checks
++- Pytest suite validates JSON flattening, odds conversions, and arbitrage detection logic:
++  ```bash
++  pytest
++  ```
++- Linting can be added via `ruff` or `flake8` (see docs for suggestions) to extend automated checks.
++
++## 📁 Repository Guide
++- `src/ingestion.py` – API client, snapshot utilities, and canonical table management.
++- `src/processing.py` – odds flattening, probability math, and convenience wrappers.
++- `src/analysis.py` – helper functions for extracting best prices and spotting arbitrage.
++- `src/features.py` & `src/modeling.py` – feature engineering and regression models for player props.
++- `web/app.py` – Streamlit interface that visualizes line discrepancies and model comparisons.
++- `docs/` – deep-dive technical documentation, architecture notes, and future roadmap.
++
++## 🧭 Roadmap
++- Extend the Streamlit view with implied edge scoring and alerting.
++- Automate daily ingestion with GitHub Actions and persisted S3 storage.
++- Add backtesting notebooks that simulate bankroll growth from detected edges.
++- Introduce CI checks (lint + tests) to keep the portfolio artifact consistently green.
++
++---
++
++If you review this project as a hiring manager, you can go from clone → run → insight in minutes. The repo highlights pragmatic data engineering, analytical rigor, and a thoughtful developer experience.
+diff --git a/data/sample_odds.json b/data/sample_odds.json
+index 97faeb9..2060f37 100644
+--- a/data/sample_odds.json
++++ b/data/sample_odds.json
+@@ -1,38 +1,61 @@
+-{
+-  "sport_key": "basketball_nba",
+-  "sport_title": "NBA",
+-  "commence_time": "2025-01-01T00:00:00Z",
+-  "home_team": "Lakers",
+-  "away_team": "Heat",
+-  "bookmakers": [
+-    {
+-      "title": "BookA",
+-      "last_update": "2025-01-01T00:00:00Z",
+-      "markets": [
+-        {
+-          "key": "h2h",
+-          "outcomes": [
+-            {"name": "Lakers", "price": 1.95},
+-            {"name": "Heat", "price": 2.20}
+-          ]
+-        }
+-      ]
+-    },
+-    {
+-      "title": "BookB",
+-      "last_update": "2025-01-01T00:00:00Z",
+-      "markets": [
+-        {
+-          "key": "h2h",
+-          "outcomes": [
+-            {"name": "Lakers", "price": 1.85},
+-            {"name": "Heat", "price": 2.00}
+-          ]
+-        }
+-      ]
+-    }
+-  ]
+-}
+-
++[
++  {
++    "id": "game_001",
++    "sport_key": "basketball_nba",
++    "sport_title": "NBA",
++    "commence_time": "2025-01-01T00:00:00Z",
++    "home_team": "Los Angeles Lakers",
++    "away_team": "Miami Heat",
++    "bookmakers": [
++      {
++        "title": "BookA",
++        "last_update": "2025-01-01T00:00:00Z",
++        "markets": [
++          {
++            "key": "h2h",
++            "outcomes": [
++              {"name": "Los Angeles Lakers", "price": 1.95},
++              {"name": "Miami Heat", "price": 2.2}
++            ]
++          }
++        ]
++      },
++      {
++        "title": "BookB",
++        "last_update": "2025-01-01T00:00:00Z",
++        "markets": [
++          {
++            "key": "h2h",
++            "outcomes": [
++              {"name": "Los Angeles Lakers", "price": 1.85},
++              {"name": "Miami Heat", "price": 2.0}
++            ]
++          }
++        ]
++      }
++    ]
++  },
++  {
++    "id": "game_002",
++    "sport_key": "basketball_nba",
++    "sport_title": "NBA",
++    "commence_time": "2025-01-02T01:00:00Z",
++    "home_team": "Denver Nuggets",
++    "away_team": "Phoenix Suns",
++    "bookmakers": [
++      {
++        "title": "BookA",
++        "last_update": "2025-01-02T00:00:00Z",
++        "markets": [
++          {
++            "key": "h2h",
++            "outcomes": [
++              {"name": "Denver Nuggets", "price": 1.7},
++              {"name": "Phoenix Suns", "price": 2.1}
++            ]
++          }
++        ]
++      }
++    ]
+   }
+ ]
+diff --git a/docs/README.md b/docs/README.md
+index ce596fd..f4ac9ea 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -1,33 +1,48 @@
+-🏀 NBA Odds Data Pipeline & Analysis
+-
+-This project builds a data pipeline and analytics framework for NBA betting markets, designed to transform raw sportsbook data into structured insights. Using The Odds API, it ingests live odds (head-to-head matchups, player props, and other markets), processes the data into clean, comparable formats, and runs analyses to uncover differences across sportsbooks.
+-
+-The core goals are:
+-
+-▫️Data Ingestion: Automating the collection of NBA odds data across multiple bookmakers.
+-
+-▫️Data Engineering: Parsing and flattening complex JSON responses into structured datasets ready for analysis.
+-
+-▫️Market Analysis: Identifying line discrepancies and opportunities, such as where one sportsbook offers significantly better odds than another.
+-
+-▫️Future Expansion: Laying the foundation for predictive modeling of player performance and expected line values.
+-
+-🎯 Real-World Applications
+-
+-▫️For Bettors & Analysts: Quickly compare odds across DraftKings, FanDuel, and others to “shop” for the best line or detect arbitrage opportunities.
+-
+-▫️For Sportsbooks: Benchmark pricing against competitors, spot inefficiencies in real time, and strengthen risk management.
+-
+-▫️For Data Science: Build predictive models of player props (points, rebounds, assists) and simulate game outcomes against market lines.
+-
+-💡 Why It Matters
+-
+-Sports betting markets move fast and are highly competitive. By developing this system, I’ve shown the ability to:
+-
+-  -Engineer robust pipelines that handle external APIs and messy, real-world data.
+-
+-  -Apply statistical and analytical reasoning to complex market structures.
+-
+-  -Translate raw data into actionable insights, the same way sportsbooks must constantly monitor competitors and adjust pricing.
+-
+-In short, this project demonstrates end-to-end skills in data engineering, sports analytics, and applied problem solving — the very skills that power real-world sportsbook operations at companies like DraftKings.
++# Technical Notes & Deep Dive
++
++This document supplements the project overview by focusing on implementation details, engineering trade-offs, and future enhancements.
++
++## Data Model
++The canonical odds table produced by `src.ingestion.props_to_dataframe` contains the following schema:
++
++| Column | Description |
++| --- | --- |
++| `timestamp` | UTC timestamp when the ingestion ran. |
++| `game_id` | Stable identifier from The Odds API. |
++| `commence_time` | Scheduled start time of the matchup. |
++| `home_team` / `away_team` | Participating teams. |
++| `bookmaker` | Sportsbook name. |
++| `last_update` | Provider timestamp for this bookmaker-market pair. |
++| `player_name` | Player associated with the prop (if applicable). |
++| `market` | Market key (e.g., `h2h`, `player_points`). |
++| `line` | Line/handicap for the outcome. |
++| `price` | Decimal odds. |
++
++## Module Responsibilities
++- **`src/ingestion.py`** – encapsulates API I/O. Functions are pure where possible, accept parameters for sport/market configuration, and persist snapshots to disk. `_require_api_key` centralizes secrets handling.
++- **`src/processing.py`** – provides deterministic helpers for flattening JSON into tidy DataFrames and for normalizing prices (American ↔ decimal) before devigging probabilities. `clean_odds` chains the helpers for end-to-end cleaning.
++- **`src/analysis.py`** – offers composable utilities (`parse_market`, `find_best_odds`, `detect_arbitrage`, `detect_discrepancies`) used in notebooks and the Streamlit dashboard.
++- **`src/features.py` / `src/modeling.py`** – starter feature generation and regression models; both accept pandas objects to stay notebook-friendly.
++- **`web/app.py`** – Streamlit application that loads live data when credentials are available or defaults to the curated fixture. Visuals highlight the best available price per outcome and arbitrage margin when detected.
++
++## Testing Strategy
++Pytest cases live in `tests/` and cover:
++- JSON flattening and structural integrity of the ingestion layer.
++- Conversion heuristics for decimal and American odds.
++- The probability math that ensures devigged probabilities sum to one per market.
++- Arbitrage detection logic based on the curated sample odds.
++
++Run the suite with `pytest`; CI integration can be added with GitHub Actions using the same command.
++
++## Reproducible Analytics
++- All notebooks should be checked in with outputs or committed as executed `.ran` artifacts.
++- Sample data in `data/sample_odds.json` mirrors the format returned by The Odds API, enabling deterministic demos and unit tests.
++- When running live ingestion, snapshots are timestamped and appended to a canonical CSV, making it simple to replay or backtest historical odds.
++
++## Future Enhancements
++1. **Data Quality** – add validation rules that flag stale bookmaker updates or missing outcomes.
++2. **Modeling Depth** – expand feature generation to include opponent defensive stats and rest days; integrate gradient boosting models.
++3. **Alerting** – build a lightweight scheduler that publishes Slack/webhook notifications when arbitrage margins exceed a configurable threshold.
++4. **Deployment** – package ingestion/processing as a CLI (`python -m src.cli ingest`) and containerize the Streamlit UI for one-click deployment.
++
++Keeping these notes alongside the high-level README ensures recruiters can quickly grasp both the story *and* the engineering rigor behind the project.
+diff --git a/requirements.txt b/requirements.txt
+index cd833c0..0d82d09 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,5 +1,8 @@
+-pandas>=1.3
+-numpy>=1.21
++pandas>=1.5
++numpy>=1.23
+ jupyter
+-requests
+-python-dotenv
++requests>=2.28
++python-dotenv>=1.0
++scikit-learn>=1.3
++streamlit>=1.25
++pytest>=7.0
+diff --git a/src/Analysis.py b/src/Analysis.py
+deleted file mode 100644
+index ad24e49..0000000
+--- a/src/Analysis.py
++++ /dev/null
+@@ -1,101 +0,0 @@
+-# src/analysis.py
+-
+-"""
+-Analysis utilities for sportsbook odds data.
+-Includes functions to parse markets, find best odds, and detect arbitrage.
+-"""
+-
+-from typing import Dict, Any
+-
+-def parse_market(game: Dict[str, Any], market_key: str) -> Dict[str, Dict[str, Any]]:
+-    """
+-    Parse a specific market from a single game.
+-    Returns nested dict: outcome -> {bookmaker, price}.
+-    """
+-    parsed = {}
+-    for bookmaker in game.get("bookmakers", []):
+-        for market in bookmaker.get("markets", []):
+-            if market["key"] == market_key:
+-                for outcome in market.get("outcomes", []):
+-                    name = outcome["name"]
+-                    price = outcome["price"]
+-                    if name not in parsed or price > parsed[name]["price"]:
+-                        parsed[name] = {"bookmaker": bookmaker["title"], "price": price}
+-    return parsed
+-
+-
+-def find_best_odds(parsed_market: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+-    """
+-    Return the highest odds per outcome (already handled in parse_market).
+-    Simply returns parsed_market for clarity.
+-    """
+-    return parsed_market
+-
+-
+-def implied_prob(decimal_odds: float) -> float:
+-    """Convert decimal odds to implied probability."""
+-    return 1 / decimal_odds
+-
+-
+-def detect_arbitrage(best_odds: Dict[str, Dict[str, Any]]):
+-    """
+-    Check for arbitrage opportunities in a two-outcome market.
+-    Returns profit margin (%) if arbitrage exists, else None.
+-    """
+-    if len(best_odds) != 2:
+-        return None  # Only works for two-outcome markets (H2H, spreads, totals)
+-
+-    probs = [implied_prob(data["price"]) for data in best_odds.values()]
+-    total_prob = sum(probs)
+-
+-    if total_prob < 1:
+-        return round((1 - total_prob) * 100, 2)
+-    return None
+-
+-
+-def detect_discrepancies(df: pd.DataFrame, market_key: str = "h2h") -> pd.DataFrame:
+-    """
+-    Detect arbitrage opportunities across games for a given market.
+-    Works for 2-outcome markets (H2H, spreads, totals).
+-    """
+-
+-    df = df[df["market"] == market_key].copy()
+-    results = []
+-
+-    for game_id, game_df in df.groupby("game_id"):
+-        home = game_df["home_team"].iloc[0]
+-        away = game_df["away_team"].iloc[0]
+-
+-        # get best odds per outcome
+-        best_odds = (
+-            game_df.groupby("outcome")
+-            .apply(lambda x: x.loc[x["price"].idxmax()])
+-            .reset_index(drop=True)
+-        )
+-
+-        # skip if not 2 outcomes
+-        if len(best_odds) != 2:
+-            continue  
+-
+-        # compute implied probabilities
+-        best_odds["implied_prob"] = best_odds["price"].apply(lambda x: 1/x)
+-        total_prob = best_odds["implied_prob"].sum()
+-
+-        arb_margin = (1 - total_prob) * 100 if total_prob < 1 else None
+-
+-        # record results for both outcomes
+-        for _, row in best_odds.iterrows():
+-            results.append({
+-                "game_id": game_id,
+-                "home_team": home,
+-                "away_team": away,
+-                "market": market_key,
+-                "outcome": row["outcome"],
+-                "best_bookmaker": row["bookmaker"],
+-                "best_price": row["price"],
+-                "implied_prob": row["implied_prob"],
+-                "arbitrage_margin": arb_margin
+-            })
+-
+-    return pd.DataFrame(results)
+-
+diff --git a/src/__init__.py b/src/__init__.py
+index e69de29..1598d84 100644
+--- a/src/__init__.py
++++ b/src/__init__.py
+@@ -0,0 +1,27 @@
++"""Top-level package exports for the sports data pipeline."""
++
++from .analysis import detect_arbitrage, detect_discrepancies, find_best_odds, implied_prob, parse_market
++from .ingestion import (
++    fetch_odds,
++    fetch_player_props,
++    props_to_dataframe,
++    save_snapshot,
++    update_canonical_table,
++)
++from .processing import clean_odds, flatten_odds_to_df, odds_to_probs
++
++__all__ = [
++    "detect_arbitrage",
++    "detect_discrepancies",
++    "find_best_odds",
++    "implied_prob",
++    "parse_market",
++    "fetch_odds",
++    "fetch_player_props",
++    "props_to_dataframe",
++    "save_snapshot",
++    "update_canonical_table",
++    "clean_odds",
++    "flatten_odds_to_df",
++    "odds_to_probs",
++]
+diff --git a/src/features.py b/src/features.py
+index 9ad00e8..9bdf0ac 100644
+--- a/src/features.py
++++ b/src/features.py
+@@ -1,4 +1,3 @@
+-# +
+ import pandas as pd
+ 
+ def build_features(df: pd.DataFrame) -> pd.DataFrame:
+diff --git a/src/ingestion.py b/src/ingestion.py
+index 59c436c..0dc8d60 100644
+--- a/src/ingestion.py
++++ b/src/ingestion.py
+@@ -1,72 +1,74 @@
+-# src/ingestion.py
++"""Functions for fetching and persisting odds data from The Odds API."""
++
++from datetime import datetime
+ import os
+-import requests
++from typing import Iterable, Mapping
++
+ import pandas as pd
+-from datetime import datetime
++import requests
+ from dotenv import load_dotenv
+ 
+ load_dotenv()
+-API_KEY = os.getenv("ODDS_API_KEY")
+ 
+ BASE_URL = "https://api.the-odds-api.com/v4/sports"
+-
+-# +
+-def fetch_player_props(sport="basketball_nba", markets="player_points", regions="us", odds_format="decimal"):
++DEFAULT_SPORT = "basketball_nba"
++DEFAULT_MARKET = "player_points"
++DEFAULT_REGION = "us"
++DEFAULT_FORMAT = "decimal"
++
++
++def _require_api_key() -> str:
++    """Return the Odds API key or raise a helpful error message."""
++
++    api_key = os.getenv("ODDS_API_KEY")
++    if not api_key:
++        raise ValueError(
++            "ODDS_API_KEY is not set. Create a .env file with 'ODDS_API_KEY=your_key' or export the variable "
++            "before calling fetch_player_props."
++        )
++    return api_key
++
++
++def fetch_player_props(
++    sport: str = DEFAULT_SPORT,
++    markets: str = DEFAULT_MARKET,
++    regions: str = DEFAULT_REGION,
++    odds_format: str = DEFAULT_FORMAT,
++) -> Iterable[Mapping[str, object]]:
+     """
+-    Fetch NBA player prop odds from The Odds API.
+-    Returns raw JSON from the API.
++    Fetch raw odds JSON from The Odds API.
++
++    Parameters mirror the API; see https://the-odds-api.com/ for documentation. An
++    ``ODDS_API_KEY`` must be provided either via environment variable or a ``.env`` file.
+     """
++
+     url = f"{BASE_URL}/{sport}/odds"
+-    
+     params = {
+-        "apiKey": API_KEY,
++        "apiKey": _require_api_key(),
+         "markets": markets,
+         "regions": regions,
+-        "oddsFormat": odds_format
++        "oddsFormat": odds_format,
+     }
+-    r = requests.get(url, params=params)
+-    r.raise_for_status()
+-    return r.json()
++    response = requests.get(url, params=params, timeout=30)
++    response.raise_for_status()
++    return response.json()
+ 
+ 
+-def fetch_odds(sport="basketball_nba", markets="player_points", regions="us", odds_format="decimal"):
+-    """
+-    Fetch NBA player prop odds and return as a pandas DataFrame.
+-    Calls fetch_player_props() and flattens the JSON response.
+-    """
+-    data = fetch_player_props(sport, markets, regions, odds_format)
++def fetch_odds(
++    sport: str = DEFAULT_SPORT,
++    markets: str = DEFAULT_MARKET,
++    regions: str = DEFAULT_REGION,
++    odds_format: str = DEFAULT_FORMAT,
++) -> pd.DataFrame:
++    """Fetch player props and flatten them into a DataFrame for quick analysis."""
+ 
+-    records = []
+-    for game in data:
+-        game_info = {
+-            "game_id": game.get("id"),
+-            "commence_time": game.get("commence_time"),
+-            "home_team": game.get("home_team"),
+-            "away_team": game.get("away_team")
+-        }
+-
+-        for bookmaker in game.get("bookmakers", []):
+-            bookie = bookmaker["title"]
+-            for market in bookmaker.get("markets", []):
+-                market_key = market.get("key")
+-                for outcome in market.get("outcomes", []):
+-                    record = {
+-                        **game_info,
+-                        "bookmaker": bookie,
+-                        "market": market_key,
+-                        "player": outcome.get("description"),
+-                        "price": outcome.get("price"),
+-                        "point": outcome.get("point")
+-                    }
+-                    records.append(record)
+-
+-    return pd.DataFrame(records)
+-
+-
+-
+-# -
+-
+-def props_to_dataframe(props_json, markets="player_points"):
++    return props_to_dataframe(
++        fetch_player_props(sport=sport, markets=markets, regions=regions, odds_format=odds_format),
++        markets=markets,
++    )
++
++
++def props_to_dataframe(props_json, markets: str = DEFAULT_MARKET) -> pd.DataFrame:
+     """
+     Convert Odds API JSON to a flat pandas DataFrame with canonical fields.
+     """
+@@ -100,7 +102,21 @@ def props_to_dataframe(props_json, markets="player_points"):
+                         "line": outcome.get("point"),
+                         "price": outcome.get("price")
+                     })
+-    return pd.DataFrame(records)
++    columns = [
++        "timestamp",
++        "game_id",
++        "commence_time",
++        "home_team",
++        "away_team",
++        "bookmaker",
++        "last_update",
++        "player_name",
++        "market",
++        "line",
++        "price",
++    ]
++    df = pd.DataFrame(records, columns=columns)
++    return df
+ 
+ def save_snapshot(df, markets="player_points"):
+     """
+diff --git a/src/processing.py b/src/processing.py
+index 7d4351d..8a03753 100644
+--- a/src/processing.py
++++ b/src/processing.py
+@@ -1,16 +1,9 @@
+-# +
+-# src/processing.py
+-"""
+-Processing utilities for sportsbook odds data.
+-Provides:
+- - flatten_odds_to_df: convert TheOddsAPI JSON -> tidy DataFrame
+- - odds_to_probs: convert odds -> implied probabilities and de-vig per market (group)
+-Supports decimal and American odds automatically.
+-"""
+-
+-from typing import List, Dict, Any, Optional
+-import pandas as pd
++"""Utilities for cleaning sportsbook odds responses."""
++
++from typing import List, Dict, Any
++
+ import numpy as np
++import pandas as pd
+ 
+ 
+ def _american_to_decimal(odds_arr: np.ndarray) -> np.ndarray:
+@@ -122,43 +115,19 @@ def odds_to_probs(df: pd.DataFrame, price_col: str = "price", market_col: str =
+     out["implied_prob"] = 1.0 / out["decimal_odds"]
+ 
+     # devig across each market grouping
+-    def devig(group):
+-        s = group["implied_prob"].sum()
+-        if s <= 0:
+-            group["devig_prob"] = group["implied_prob"]
+-        else:
+-            group["devig_prob"] = group["implied_prob"] / s
+-        return group
+-
+-    out = out.groupby([market_col]).apply(devig).reset_index(drop=True)
++    totals = out.groupby(market_col)["implied_prob"].transform("sum")
++    with np.errstate(divide="ignore", invalid="ignore"):
++        out["devig_prob"] = np.where(
++            totals <= 0,
++            out["implied_prob"],
++            out["implied_prob"] / totals,
++        )
+ 
+     return out
++def clean_odds(raw_data: List[Dict[str, Any]], market: str = "h2h") -> pd.DataFrame:
++    """Flatten odds JSON and add implied and de-vig probabilities."""
+ 
+-
+-
+-# -
+-
+-
+-def clean_odds(raw_data):
+-    """
+-    Turn The Odds API JSON response into a tidy DataFrame.
+-    """
+-    records = []
+-    for game in raw_data:
+-        home_team = game["home_team"]
+-        away_team = game["away_team"]
+-        for book in game["bookmakers"]:
+-            bookmaker = book["title"]
+-            for market in book["markets"]:
+-                market_key = market["key"]
+-                for outcome in market["outcomes"]:
+-                    records.append({
+-                        "home_team": home_team,
+-                        "away_team": away_team,
+-                        "bookmaker": bookmaker,
+-                        "market": market_key,
+-                        "player": outcome.get("name"),
+-                        "price": outcome.get("price"),
+-                        "prob": american_to_prob(outcome.get("price"))
+-                    })
+-    return pd.DataFrame(records)
++    flattened = flatten_odds_to_df(raw_data, market=market)
++    if flattened.empty:
++        return flattened
++    return odds_to_probs(flattened, price_col="price", market_col="game_id")

@@ -1,16 +1,9 @@
-# +
-# src/processing.py
-"""
-Processing utilities for sportsbook odds data.
-Provides:
- - flatten_odds_to_df: convert TheOddsAPI JSON -> tidy DataFrame
- - odds_to_probs: convert odds -> implied probabilities and de-vig per market (group)
-Supports decimal and American odds automatically.
-"""
+"""Utilities for cleaning sportsbook odds responses."""
 
-from typing import List, Dict, Any, Optional
-import pandas as pd
+from typing import List, Dict, Any
+
 import numpy as np
+import pandas as pd
 
 
 def _american_to_decimal(odds_arr: np.ndarray) -> np.ndarray:
@@ -122,43 +115,19 @@ def odds_to_probs(df: pd.DataFrame, price_col: str = "price", market_col: str = 
     out["implied_prob"] = 1.0 / out["decimal_odds"]
 
     # devig across each market grouping
-    def devig(group):
-        s = group["implied_prob"].sum()
-        if s <= 0:
-            group["devig_prob"] = group["implied_prob"]
-        else:
-            group["devig_prob"] = group["implied_prob"] / s
-        return group
-
-    out = out.groupby([market_col]).apply(devig).reset_index(drop=True)
+    totals = out.groupby(market_col)["implied_prob"].transform("sum")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out["devig_prob"] = np.where(
+            totals <= 0,
+            out["implied_prob"],
+            out["implied_prob"] / totals,
+        )
 
     return out
+def clean_odds(raw_data: List[Dict[str, Any]], market: str = "h2h") -> pd.DataFrame:
+    """Flatten odds JSON and add implied and de-vig probabilities."""
 
-
-
-# -
-
-
-def clean_odds(raw_data):
-    """
-    Turn The Odds API JSON response into a tidy DataFrame.
-    """
-    records = []
-    for game in raw_data:
-        home_team = game["home_team"]
-        away_team = game["away_team"]
-        for book in game["bookmakers"]:
-            bookmaker = book["title"]
-            for market in book["markets"]:
-                market_key = market["key"]
-                for outcome in market["outcomes"]:
-                    records.append({
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "bookmaker": bookmaker,
-                        "market": market_key,
-                        "player": outcome.get("name"),
-                        "price": outcome.get("price"),
-                        "prob": american_to_prob(outcome.get("price"))
-                    })
-    return pd.DataFrame(records)
+    flattened = flatten_odds_to_df(raw_data, market=market)
+    if flattened.empty:
+        return flattened
+    return odds_to_probs(flattened, price_col="price", market_col="game_id")
