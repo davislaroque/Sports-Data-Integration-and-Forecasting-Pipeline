@@ -1,7 +1,13 @@
+# Python build and cache
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+
+# Environment and OS
 .env
 .DS_Store
-data/
-# Python virtual environment
 .venv/
+
+# Data and notebooks
+data/
+*.ipynb_checkpoints/
