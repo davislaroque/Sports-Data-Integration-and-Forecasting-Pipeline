@@ -1,38 +1,9 @@
-# Sports Pipeline V2
+# Exploratory multi-sport notebook dashboard
 
-A Jupyter-first dashboard for scanning NFL, NBA, and MLB betting markets, devigging odds, and surfacing high-expected-value bets with risk-adjusted rankings.
+This earlier interface adds NFL, NBA, and MLB selection, local response caching, EV arithmetic, and export controls. The maintained entry points are the [root CLI and Streamlit app](../README.md).
 
-## Requirements
-- Python 3.11
-- Install dependencies: `pip install -r requirements.txt` (core libs: requests, pandas, numpy, scipy, ipywidgets, plotly)
-- Environment variable: `ODDS_API_KEY` must be set for The Odds API.
+From the repository root, install `requirements.txt`, set `ODDS_API_KEY` in your environment, and open `jupyter lab Sports-Pipeline-V2/sports_market_dashboard.ipynb`.
 
-## Running the Notebook
-1. Launch Jupyter: `jupyter notebook Sports-Pipeline-V2/sports_market_dashboard.ipynb`.
-2. Select the sport from the dropdown and click **Fetch Odds**.
-3. Optionally toggle **Show Only High-EV Bets (EV ≥ 2%)** or export the results to CSV.
+The notebook imports `odds_utils.py`, `ev_calculator.py`, and `widgets_ui.py`. Normalization reuses the main pipeline's bookmaker/contract grouping. `true_prob` is retained as a legacy column name for a devigged market estimate. It is not an independently learned probability; calculating EV from a bookmaker's own prices does not establish a predictive edge.
 
-## Caching
-- Cached responses live in `data/cache/` with a 30-minute freshness window.
-- Raw API responses are saved to `data/raw_odds/` for debugging.
-- If the API fails or rate limits hit, the dashboard automatically falls back to cache or skips missing lines without crashing.
-
-## EV vs EV_adj
-- **EV**: Standard expected value per $1 stake using devigged true probabilities.
-- **EV_adj**: Variance-adjusted EV = EV − λ × Var(EV) with λ defaulting to 0.5 to reward lower-risk opportunities.
-
-## Kelly Sizing
-- Uses half-Kelly (0.5x) on the devigged probability and caps suggested stake at 5% of bankroll.
-- Bets with EV ≥ 2% show a ✅ Bet flag; otherwise they are labeled ❌ Pass.
-
-## Logging
-- Runtime logs are written to `logs/app.log` and displayed inline in the notebook output.
-- Info logs cover API/cache loads and EV calculations; warnings surface missing/invalid lines; errors capture API failures.
-
-## File Map
-- `sports_market_dashboard.ipynb`: Main interactive UI.
-- `odds_utils.py`: API calls, caching, odds conversion, and devigging. (# [Refactor Note] markers highlight reused components.)
-- `ev_calculator.py`: EV, variance-adjusted EV, and Kelly sizing helpers.
-- `widgets_ui.py`: IPyWidgets layout, formatting, and table rendering.
-- `data/`: Cache and raw odds storage.
-- `logs/app.log`: Runtime log output.
+The cache expires after 30 minutes; on an API failure, stale cached results may be returned and logged. Treat those as historical snapshots. Runtime caches, logs, and exports are ignored by Git. This interface has offline helper checks; live fetching requires your own key and has not been validated against a paid subscription here.

@@ -1,48 +1,27 @@
-# Technical Notes & Deep Dive
+# Pipeline design and scope
 
-This document supplements the project overview by focusing on implementation details, engineering trade-offs, and future enhancements.
+## Main workflow
 
-## Data Model
-The canonical odds table produced by `src.ingestion.props_to_dataframe` contains the following schema:
+1. Ingestion retrieves standard markets in bulk, or player props for one event. HTTP GET requests use connection/read timeouts and two retries for transient statuses. Errors omit credential-bearing URLs.
+2. Processing retains `game_id`, bookmaker, market, player, outcome, raw line, and normalized `contract_line`. Spread contract lines use the home-team perspective.
+3. Each complete two-outcome contract is normalized within its bookmaker. `implied_prob = 1 / decimal_odds`; `devig_prob` divides by the sum for that bookmaker and contract. Incomplete/invalid groups keep `NaN`.
+4. Analysis compares the best decimal odds for identical event/market/player/line combinations. The reported percentage is equal-payout ROI, rather than the probability shortfall below one.
+5. The CLI writes normalized data, comparisons, and deduplicated quote history. The Streamlit app supports explicit sample/live selection and a five-minute live-data cache.
 
-| Column | Description |
-| --- | --- |
-| `timestamp` | UTC timestamp when the ingestion ran. |
-| `game_id` | Stable identifier from The Odds API. |
-| `commence_time` | Scheduled start time of the matchup. |
-| `home_team` / `away_team` | Participating teams. |
-| `bookmaker` | Sportsbook name. |
-| `last_update` | Provider timestamp for this bookmaker-market pair. |
-| `player_name` | Player associated with the prop (if applicable). |
-| `market` | Market key (e.g., `h2h`, `player_points`). |
-| `line` | Line/handicap for the outcome. |
-| `price` | Decimal odds. |
+## Persistence
 
-## Module Responsibilities
-- **`src/ingestion.py`** – encapsulates API I/O. Functions are pure where possible, accept parameters for sport/market configuration, and persist snapshots to disk. `_require_api_key` centralizes secrets handling.
-- **`src/processing.py`** – provides deterministic helpers for flattening JSON into tidy DataFrames and for normalizing prices (American ↔ decimal) before devigging probabilities. `clean_odds` chains the helpers for end-to-end cleaning.
-- **`src/analysis.py`** – offers composable utilities (`parse_market`, `find_best_odds`, `detect_arbitrage`, `detect_discrepancies`) used in notebooks and the Streamlit dashboard.
-- **`src/features.py` / `src/modeling.py`** – starter feature generation and regression models; both accept pandas objects to stay notebook-friendly.
-- **`web/app.py`** – Streamlit application that loads live data when credentials are available or defaults to the curated fixture. Visuals highlight the best available price per outcome and arbitrage margin when detected.
+History deduplicates event, bookmaker, market, player, outcome, line, price, update time, and odds format when present. Re-ingesting an identical quote does not add another row. A changed price or provider update timestamp creates a new row. The CSV is replaced atomically, but concurrent writers are not supported; use a transactional database before scheduling overlapping jobs.
 
-## Testing Strategy
-Pytest cases live in `tests/` and cover:
-- JSON flattening and structural integrity of the ingestion layer.
-- Conversion heuristics for decimal and American odds.
-- The probability math that ensures devigged probabilities sum to one per market.
-- Arbitrage detection logic based on the curated sample odds.
+The bundled fixture is synthetic and covers h2h only. Live player props require an event ID and the relevant API access. A successful offline demo is not evidence that a particular key or subscription can access live props.
 
-Run the suite with `pytest`; CI integration can be added with GitHub Actions using the same command.
+## Modeling boundaries
 
-## Reproducible Analytics
-- All notebooks should be checked in with outputs or committed as executed `.ran` artifacts.
-- Sample data in `data/sample_odds.json` mirrors the format returned by The Odds API, enabling deterministic demos and unit tests.
-- When running live ingestion, snapshots are timestamped and appended to a canonical CSV, making it simple to replay or backtest historical odds.
+`features.build_features` represents a row observed after a game and sets the following game's points/date as the target. When splitting, ensure all training target dates precede the first evaluation prediction time. `evaluation.backtest` requires aligned binary outcomes and actual offered prices. It does not model pushes or simultaneous bankroll exposure.
 
-## Future Enhancements
-1. **Data Quality** – add validation rules that flag stale bookmaker updates or missing outcomes.
-2. **Modeling Depth** – expand feature generation to include opponent defensive stats and rest days; integrate gradient boosting models.
-3. **Alerting** – build a lightweight scheduler that publishes Slack/webhook notifications when arbitrage margins exceed a configurable threshold.
-4. **Deployment** – package ingestion/processing as a CLI (`python -m src.cli ingest`) and containerize the Streamlit UI for one-click deployment.
+The V2 UI uses `true_prob` as a legacy column name for the core `devig_prob` estimate. It is not an independent learned probability. These calculations do not demonstrate profitability. The separate Sports_Prediction_Model repository contains the reproducible regression workflow.
 
-Keeping these notes alongside the high-level README ensures recruiters can quickly grasp both the story *and* the engineering rigor behind the project.
+## Next steps
+
+- Validate quote timestamps and market freshness before comparing prices.
+- Replace single-writer CSV history with a database if ingestion becomes concurrent.
+- Connect documented historical outcomes for model calibration and walk-forward evaluation.
