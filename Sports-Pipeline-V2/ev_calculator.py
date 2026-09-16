@@ -1,10 +1,11 @@
 """Expected value, variance-adjusted EV, and Kelly sizing utilities."""
+
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from odds_utils import _american_to_decimal  # [Refactor Note]
+from src.processing import _american_to_decimal
 
 
 def _american_implied_prob(american_odds: float) -> float:
@@ -21,20 +22,30 @@ def compute_expected_value(american_odds: float, true_prob: float) -> float:
     return (true_prob * payout) - lose_prob
 
 
-def compute_variance(american_odds: float, true_prob: float, ev: Optional[float] = None) -> float:
+def compute_variance(
+    american_odds: float, true_prob: float, ev: Optional[float] = None
+) -> float:
     """Return variance of the bet outcome for a $1 stake."""
     decimal = _american_to_decimal(np.array([american_odds]))[0]
     payout = decimal - 1.0
-    expected = ev if ev is not None else compute_expected_value(american_odds, true_prob)
-    return (true_prob * (payout - expected) ** 2) + ((1 - true_prob) * (-1 - expected) ** 2)
+    expected = (
+        ev if ev is not None else compute_expected_value(american_odds, true_prob)
+    )
+    return (true_prob * (payout - expected) ** 2) + (
+        (1 - true_prob) * (-1 - expected) ** 2
+    )
 
 
-def compute_adjusted_ev(ev: float, variance: float, risk_aversion: float = 0.5) -> float:
+def compute_adjusted_ev(
+    ev: float, variance: float, risk_aversion: float = 0.5
+) -> float:
     """Variance-penalized expected value."""
     return ev - risk_aversion * variance
 
 
-def half_kelly_fraction(american_odds: float, true_prob: float, cap: float = 0.05) -> float:
+def half_kelly_fraction(
+    american_odds: float, true_prob: float, cap: float = 0.05
+) -> float:
     """Compute conservative Kelly fraction (0.5x) capped at ``cap``."""
     decimal = _american_to_decimal(np.array([american_odds]))[0]
     b = decimal - 1.0
@@ -49,10 +60,13 @@ def enrich_dataframe(df: pd.DataFrame, risk_aversion: float = 0.5) -> pd.DataFra
     """Add EV, variance-adjusted EV, and Kelly sizing to a standardized odds DataFrame."""
     if df.empty:
         return df
-    out = df.copy()
-    out["true_prob"].fillna(out.get("implied_prob"), inplace=True)
+    out = df.dropna(subset=["true_prob"]).copy()
+    if out.empty:
+        return out
 
-    out["ev"] = out.apply(lambda r: compute_expected_value(r["odds_american"], r["true_prob"]), axis=1)
+    out["ev"] = out.apply(
+        lambda r: compute_expected_value(r["odds_american"], r["true_prob"]), axis=1
+    )
     out["variance"] = out.apply(
         lambda r: compute_variance(r["odds_american"], r["true_prob"], r["ev"]), axis=1
     )

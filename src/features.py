@@ -1,24 +1,21 @@
+"""Postgame feature rows for next-game prediction, with explicit target dates."""
+
 import pandas as pd
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add rolling averages and other predictive features to player game logs.
-    Expects columns: player, date, points, rebounds, assists.
-    """
-    df = df.sort_values(["player", "date"])
-    
-    df["points_rolling_avg"] = (
-        df.groupby("player")["points"].transform(lambda x: x.rolling(5, min_periods=1).mean())
-    )
-    df["rebounds_rolling_avg"] = (
-        df.groupby("player")["rebounds"].transform(lambda x: x.rolling(5, min_periods=1).mean())
-    )
-    df["assists_rolling_avg"] = (
-        df.groupby("player")["assists"].transform(lambda x: x.rolling(5, min_periods=1).mean())
-    )
-    
-    # Define next-game points as prediction target
-    df["target_points"] = df.groupby("player")["points"].shift(-1)
-    
-    return df.dropna(subset=["target_points"])
 
+def build_features(df):
+    required = {"player", "date", "points", "rebounds", "assists"}
+    if not required <= set(df):
+        raise ValueError(f"Missing columns: {sorted(required - set(df))}")
+    out = df.copy()
+    out["date"] = pd.to_datetime(out["date"])
+    if out.duplicated(["player", "date"]).any():
+        raise ValueError("Expected one row per player and date.")
+    out = out.sort_values(["player", "date"])
+    for stat in ["points", "rebounds", "assists"]:
+        out[f"{stat}_rolling_avg"] = out.groupby("player")[stat].transform(
+            lambda values: values.rolling(5, min_periods=1).mean()
+        )
+    out["target_points"] = out.groupby("player")["points"].shift(-1)
+    out["target_date"] = out.groupby("player")["date"].shift(-1)
+    return out.dropna(subset=["target_points", "target_date"])

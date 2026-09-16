@@ -1,6 +1,12 @@
 """Top-level package exports for the sports data pipeline."""
 
-from .analysis import detect_arbitrage, detect_discrepancies, find_best_odds, implied_prob, parse_market
+from .analysis import (
+    detect_arbitrage,
+    detect_discrepancies,
+    find_best_odds,
+    implied_prob,
+    parse_market,
+)
 from .ingestion import (
     fetch_odds,
     fetch_player_props,

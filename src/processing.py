@@ -1,133 +1,144 @@
-"""Utilities for cleaning sportsbook odds responses."""
-
-from typing import List, Dict, Any
+"""Normalize odds while preserving the event, player, side, and handicap."""
 
 import numpy as np
 import pandas as pd
 
+COLUMNS = [
+    "game_id",
+    "sport",
+    "commence_time",
+    "home_team",
+    "away_team",
+    "bookmaker",
+    "last_update",
+    "market",
+    "player_name",
+    "outcome",
+    "line",
+    "contract_line",
+    "price",
+]
+CONTRACT = ["game_id", "market", "player_name", "contract_line"]
 
-def _american_to_decimal(odds_arr: np.ndarray) -> np.ndarray:
-    """Convert American odds (e.g. -140, +120) to decimal odds."""
-    odds = np.array(odds_arr, dtype=float)
-    dec = np.empty_like(odds)
-    pos = odds > 0
-    neg = ~pos
-    # for positive American odds: +120 -> 2.2  (120/100 + 1)
-    dec[pos] = (odds[pos] / 100.0) + 1.0
-    # for negative American odds: -140 -> 1 + 100/140
-    dec[neg] = (100.0 / -odds[neg]) + 1.0
-    return dec
+
+def _american_to_decimal(odds_arr):
+    odds = np.asarray(odds_arr, dtype=float)
+    if not np.isfinite(odds).all() or (np.abs(odds) < 100).any():
+        raise ValueError(
+            "American odds must be finite with absolute value at least 100."
+        )
+    return np.where(odds > 0, 1 + odds / 100, 1 + 100 / np.abs(odds))
 
 
-def _maybe_convert_to_numeric(series: pd.Series) -> pd.Series:
-    # Try to coerce string values like "+120" or "-140" to numeric
-    return pd.to_numeric(series.astype(str).str.replace(r'^\+', '', regex=True), errors="coerce")
+def _maybe_convert_to_numeric(series):
+    return pd.to_numeric(series, errors="coerce")
 
 
-def flatten_odds_to_df(odds_json: List[Dict[str, Any]], market: str = "h2h") -> pd.DataFrame:
-    """
-    Flatten TheOddsAPI-like JSON to a tidy DataFrame with columns:
-      ['game_id', 'sport', 'commence_time', 'home_team', 'away_team',
-       'bookmaker', 'last_update', 'market', 'outcome', 'price']
-    Parameters:
-      odds_json: list (API response)
-      market: market key to extract (e.g., "h2h", "spreads", "totals")
-    """
+def flatten_odds_to_df(odds_json, market="h2h"):
     records = []
     for game in odds_json:
-        game_id = f"{game.get('home_team','')}_vs_{game.get('away_team','')}_{game.get('commence_time','')}"
-        sport = game.get("sport_key") or game.get("sport")
-        commence_time = game.get("commence_time")
-        home_team = game.get("home_team")
-        away_team = game.get("away_team")
-
-        for bookmaker in game.get("bookmakers", []):
-            bookie = bookmaker.get("title")
-            last_update = bookmaker.get("last_update")
-            for m in bookmaker.get("markets", []):
-                if m.get("key") != market:
-                    continue
-                for outcome in m.get("outcomes", []):
-                    # price could be under 'price' or 'odds' depending on API variant
-                    price = outcome.get("price", outcome.get("odds", outcome.get("price_decimal")))
-                    records.append({
-                        "game_id": game_id,
-                        "sport": sport,
-                        "commence_time": commence_time,
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "bookmaker": bookie,
-                        "last_update": last_update,
-                        "market": m.get("key"),
-                        "outcome": outcome.get("name") or outcome.get("outcome") or outcome.get("outcome_name"),
-                        "price": price
-                    })
-
-    df = pd.DataFrame(records)
-    # standardize price column to numeric where possible (strip '+' sign)
-    if "price" in df.columns:
-        df["price"] = _maybe_convert_to_numeric(df["price"])
-    return df
-
-
-def odds_to_probs(df: pd.DataFrame, price_col: str = "price", market_col: str = "game_id") -> pd.DataFrame:
-    """
-    Convert odds to implied probabilities and de-vig per market grouping.
-    - Detects whether odds are decimal or American by heuristic:
-        If any price <= 0 or abs(price) >= 100 -> treat as American.
-        Otherwise treat as decimal.
-    - Adds these columns to the returned DataFrame:
-        'decimal_odds', 'implied_prob', 'devig_prob'
-    Parameters:
-      df: DataFrame containing at least [price_col, market_col]
-      price_col: name of the column which stores the odds
-      market_col: grouping column name used to de-vig across outcomes (game or market id)
-    """
-    if price_col not in df.columns:
-        raise ValueError(f"price column '{price_col}' not found in DataFrame")
-
-    # make a copy to avoid accidental mutation
-    out = df.copy()
-
-    # coerce to numeric (strip plus sign)
-    out[price_col] = _maybe_convert_to_numeric(out[price_col])
-    if out[price_col].isna().any():
-        # keep NaNs but warn
-        pass
-
-    # Heuristic: decide odds format per-row: if any absolute value >= 100 or negative -> american
-    # We'll create decimal odds column robustly:
-    # For rows that look like American, convert; otherwise assume decimal.
-    is_american = (out[price_col] <= 0) | (out[price_col].abs() >= 100)
-    # Convert arrays
-    dec = out[price_col].to_numpy(dtype=float)
-    if is_american.any():
-        # convert only american rows
-        am_mask = is_american.to_numpy()
-        dec_converted = dec.copy()
-        dec_converted[am_mask] = _american_to_decimal(dec[am_mask])
-        dec_converted[~am_mask] = dec[~am_mask]  # keep existing decimal values
-        out["decimal_odds"] = dec_converted
-    else:
-        out["decimal_odds"] = dec
-
-    # implied probability
-    out["implied_prob"] = 1.0 / out["decimal_odds"]
-
-    # devig across each market grouping
-    totals = out.groupby(market_col)["implied_prob"].transform("sum")
-    with np.errstate(divide="ignore", invalid="ignore"):
-        out["devig_prob"] = np.where(
-            totals <= 0,
-            out["implied_prob"],
-            out["implied_prob"] / totals,
+        game_id = (
+            game.get("id")
+            or f"{game.get('home_team')}_vs_{game.get('away_team')}_{game.get('commence_time')}"
         )
-
+        for book in game.get("bookmakers", []):
+            for item in book.get("markets", []):
+                if item.get("key") != market:
+                    continue
+                for outcome in item.get("outcomes", []):
+                    side = outcome.get("name")
+                    line = outcome.get("point")
+                    contract_line = line
+                    if (
+                        market == "spreads"
+                        and side == game.get("away_team")
+                        and line is not None
+                    ):
+                        contract_line = -float(line)
+                    records.append(
+                        {
+                            "game_id": game_id,
+                            "sport": game.get("sport_key"),
+                            "commence_time": game.get("commence_time"),
+                            "home_team": game.get("home_team"),
+                            "away_team": game.get("away_team"),
+                            "bookmaker": book.get("title") or book.get("key"),
+                            "last_update": item.get("last_update")
+                            or book.get("last_update"),
+                            "market": market,
+                            "player_name": outcome.get("description"),
+                            "outcome": side,
+                            "line": line,
+                            "contract_line": contract_line,
+                            "price": outcome.get("price"),
+                        }
+                    )
+    out = pd.DataFrame(records, columns=COLUMNS)
+    for col in ["price", "line", "contract_line"]:
+        out[col] = pd.to_numeric(out[col], errors="coerce")
     return out
-def clean_odds(raw_data: List[Dict[str, Any]], market: str = "h2h") -> pd.DataFrame:
-    """Flatten odds JSON and add implied and de-vig probabilities."""
 
-    flattened = flatten_odds_to_df(raw_data, market=market)
-    if flattened.empty:
-        return flattened
-    return odds_to_probs(flattened, price_col="price", market_col="game_id")
+
+def complete_two_way(group):
+    """Require the actual opposing sides, not just two arbitrary rows."""
+    names = set(group["outcome"])
+    market = group["market"].iloc[0]
+    if market in ("h2h", "spreads"):
+        expected = {group["home_team"].iloc[0], group["away_team"].iloc[0]}
+    elif market == "totals" or str(market).startswith("player_"):
+        expected = {"Over", "Under"}
+    else:
+        return False
+    if market != "h2h" and group["contract_line"].isna().any():
+        return False
+    if str(market).startswith("player_") and group["player_name"].isna().any():
+        return False
+    return len(expected) == 2 and names == expected
+
+
+def odds_to_probs(df, price_col="price", market_col="game_id", odds_format="auto"):
+    """Remove margin within each bookmaker and identical two-way contract.
+
+    Set odds_format explicitly for API data. Auto detection is only a convenience
+    for legacy mixed-format inputs; large decimal odds are otherwise ambiguous.
+    Incomplete or invalid markets retain NaN devig probabilities.
+    """
+    if price_col not in df:
+        raise ValueError(f"price column '{price_col}' not found in DataFrame")
+    if odds_format not in ("auto", "decimal", "american"):
+        raise ValueError("odds_format must be auto, decimal, or american.")
+    out = df.copy().reset_index(drop=True)
+    prices = pd.to_numeric(out[price_col], errors="coerce")
+    mask = (
+        (prices <= -100) | (prices >= 100)
+        if odds_format == "auto"
+        else pd.Series(odds_format == "american", index=out.index)
+    )
+    decimal = prices.to_numpy(dtype=float).copy()
+    if mask.any():
+        decimal[mask] = _american_to_decimal(prices.loc[mask].to_numpy())
+    valid = np.isfinite(decimal) & (decimal > 1)
+    out["decimal_odds"] = np.where(valid, decimal, np.nan)
+    out["implied_prob"] = 1 / out["decimal_odds"]
+    out["devig_prob"] = np.nan
+    keys = [market_col] + [
+        col
+        for col in ["bookmaker", "market", "player_name", "contract_line", "timestamp"]
+        if col in out and col != market_col
+    ]
+    for _, group in out.groupby(keys, dropna=False):
+        if group["implied_prob"].isna().any():
+            continue
+        if "outcome" in group:
+            if not complete_two_way(group) or group["outcome"].duplicated().any():
+                continue
+        elif len(group) != 2:
+            continue
+        out.loc[group.index, "devig_prob"] = (
+            group["implied_prob"] / group["implied_prob"].sum()
+        )
+    return out
+
+
+def clean_odds(raw_data, market="h2h", odds_format="decimal"):
+    return odds_to_probs(flatten_odds_to_df(raw_data, market), odds_format=odds_format)

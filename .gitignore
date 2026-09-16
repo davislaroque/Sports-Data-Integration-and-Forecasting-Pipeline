@@ -1,13 +1,16 @@
-# Python build and cache
+.venv/
+.env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
-*.pyo
-
-# Environment and OS
-.env
+.pytest_cache/
+.ipynb_checkpoints/
 .DS_Store
-.venv/
-
-# Data and notebooks
-data/
-*.ipynb_checkpoints/
+artifacts/
+logs/
+*.log
+data/*
+!data/sample_odds.json
+!data/README.md
+Sports-Pipeline-V2/data/
